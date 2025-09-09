@@ -110,13 +110,13 @@ class LighterTrader:
                 logger.error(f"无法获取{symbol}的price_decimals")
                 return None
             
-            formatted_price = self._format_price(price,price_decimals)  # 假设价格精度为2位小数
+            formatted_price = self._format_price(price*1.1,price_decimals)  # 假设价格精度为2位小数
             
             logger.info(f"创建市价订单: {symbol} {formatted_amount} {size_decimals} @ ${formatted_price} {price_decimals}")
             logger.info(f"Market Index: {market_index}, Is Ask: {is_ask}")
             
             # 创建订单
-            tx = await self.client.create_market_order(
+            tx_result = await self.client.create_market_order(
                 market_index=market_index,
                 client_order_index=client_order_index,
                 base_amount=formatted_amount,
@@ -124,8 +124,21 @@ class LighterTrader:
                 is_ask=is_ask,
             )
             
-            logger.info(f"订单创建成功: {tx}")
-            return tx
+            logger.info(f"✅ 订单提交成功: {tx_result}")
+            
+            # 提取交易哈希
+            if isinstance(tx_result, tuple) and len(tx_result) >= 2:
+                resp_obj = tx_result[1]  # 第二个元素是RespSendTx对象
+                if hasattr(resp_obj, 'tx_hash'):
+                    tx_hash = resp_obj.tx_hash
+                    logger.info(f"提取到交易哈希: {tx_hash}")
+                    return tx_hash
+                else:
+                    logger.warning("响应对象中未找到tx_hash属性")
+                    return str(tx_result)
+            else:
+                logger.info(f"订单响应格式不符合预期: {type(tx_result)}")
+                return str(tx_result)
             
         except Exception as e:
             logger.error(f"创建订单失败: {e}")
