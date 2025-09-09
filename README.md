@@ -9,12 +9,12 @@ lighter当前需要邀请码
 
 ## 使用方式
 
++ 将 `.env.example` 文件名修改为 `.env`， 填写对应的api信息
++ 运行 `pip install uv`
++ 运行 `uv run main.py`
 
 ## paradex_info.py
 
-获取paradex上账号的持仓以及对应的希腊字母
-https://api.prod.paradex.trade/v1/markets
-更关注下面的信息
 https://api.prod.paradex.trade/v1/markets/summary?market=ALL
 
 先通过api获取各个合约的delta

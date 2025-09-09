@@ -1,3 +1,0 @@
-# paradex py lib
-paradex_py
-git+https://github.com/elliottech/lighter-python.git

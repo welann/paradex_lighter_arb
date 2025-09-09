@@ -3,7 +3,7 @@
 测试Paradex API数据解析功能
 """
 
-from paradex_info import ParadexAPI
+from paradex_market import ParadexAPI
 
 def test_api():
     """测试API功能"""

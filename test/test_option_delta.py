@@ -3,7 +3,7 @@
 测试获取期权delta值的功能
 """
 
-from paradex_info import ParadexAPI
+from paradex_market import ParadexAPI
 
 def test_option_delta():
     """测试期权delta获取功能"""

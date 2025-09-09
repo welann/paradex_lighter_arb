@@ -3,7 +3,7 @@
 快速测试SOL-USD-215-C的delta值
 """
 
-from paradex_info import ParadexAPI
+from paradex_market import ParadexAPI
 
 def main():
     api = ParadexAPI()
