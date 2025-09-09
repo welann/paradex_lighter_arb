@@ -162,6 +162,37 @@ class LighterMarketAPI:
         
         return size_decimals_map
     
+    def get_price_decimals(self, symbol: str) -> Optional[int]:
+        """
+        获取指定币种的price_decimals
+        
+        Args:
+            symbol: 代币符号 ("ETH", "BTC", "SOL", "HYPE")
+            
+        Returns:
+            Optional[int]: price_decimals值，获取失败返回None
+        """
+        market_data = self.get_market_by_symbol(symbol)
+        if market_data:
+            return market_data.price_decimals
+        return None
+    
+    def get_all_price_decimals(self) -> Dict[str, int]:
+        """
+        获取所有目标币种的price_decimals
+        
+        Returns:
+            Dict[str, int]: 币种符号到price_decimals的映射
+        """
+        price_decimals_map = {}
+        
+        for symbol in self.target_markets.values():
+            price_decimals = self.get_price_decimals(symbol)
+            if price_decimals is not None:
+                price_decimals_map[symbol] = price_decimals
+        
+        return price_decimals_map
+    
     def _parse_market_data(self, data: Dict) -> LighterMarketData:
         """
         解析API返回的市场数据
