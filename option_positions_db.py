@@ -344,18 +344,17 @@ class OptionPositionsDB:
 def main():
     """示例用法"""
     db = OptionPositionsDB()
-    
-    db.add_position("SOL-USD-215-C", 5)
-    
-    db.add_position("ETH-USD-3500-P", -3)
+    db.clear_all_positions()
+    db.add_position("SOL-USD-215-C", -1)
+    db.add_position("HYPE-USD-50-C", -3)
+    # db.add_position("SOL-USD-225-C", -1)
     
     db.display_all_positions()
     
-    db.remove_position("SOL-USD-215-C", 2)
-    
-    print("\n平仓后:")
-    db.display_all_positions()
-    # db.clear_all_positions()
-    db.display_all_positions()
+
+    # print("\n平仓后:")
+    # db.display_all_positions()
+    # # db.clear_all_positions()
+    # db.display_all_positions()
 if __name__ == "__main__":
     main()

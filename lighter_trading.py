@@ -124,7 +124,8 @@ class LighterTrader:
                 is_ask=is_ask,
             )
             
-            logger.info(f"订单创建成功: {tx}")
+            # logger.info(f"订单创建成功: {tx}")
+            logger.info(f"订单创建成功")
             return tx
             
         except Exception as e:
@@ -220,7 +221,7 @@ class LighterTrader:
         return int(amount * multiplier)
     
     def _format_price(self,price:float,price_decimals:int)->int:
-        multiplier = 10 ** (price_decimals-1)
+        multiplier = 10 ** (price_decimals)
         return int(price * multiplier)
     
     async def get_market_price(self, symbol: str) -> Optional[float]:
