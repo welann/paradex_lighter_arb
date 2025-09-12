@@ -13,9 +13,44 @@ from lighter_market import LighterMarketAPI
 from lighter_account import get_position_by_symbol
 from lighter_trading import LighterTrader
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 
-logging.basicConfig(level=logging.INFO)
+# 配置日志系统
+def setup_logging():
+    """配置日志系统，同时输出到控制台和文件"""
+    # 创建日志格式
+    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    date_format = '%Y-%m-%d %H:%M:%S'
+    
+    # 创建根日志记录器
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    
+    # 清除已有的处理器
+    root_logger.handlers.clear()
+    
+    # 创建控制台处理器
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter(log_format, date_format)
+    console_handler.setFormatter(console_formatter)
+    
+    # 创建文件处理器
+    log_filename = f"hedge_system_{datetime.now().strftime('%Y%m%d')}.log"
+    file_handler = logging.FileHandler(log_filename, encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    file_formatter = logging.Formatter(log_format, date_format)
+    file_handler.setFormatter(file_formatter)
+    
+    # 添加处理器到根日志记录器
+    root_logger.addHandler(console_handler)
+    root_logger.addHandler(file_handler)
+    
+    return log_filename
+
+# 设置日志系统
+log_filename = setup_logging()
 logger = logging.getLogger(__name__)
 logging.getLogger('urllib3').setLevel(logging.ERROR)
 
@@ -56,6 +91,17 @@ class HedgeSystem:
             "BTC": "BTC",
             "HYPE": "HYPE"
         }
+        
+        # 自动对冲控制标志
+        self.auto_hedge_enabled = False
+        self.hedge_interval = 10  # 对冲检查间隔（秒）
+        
+        # 记录日志文件位置
+        logger.info(f"对冲系统初始化完成，日志文件: {log_filename}")
+    
+    def get_log_filename(self) -> str:
+        """获取当前日志文件名"""
+        return log_filename
     
     def extract_underlying_symbol(self, option_symbol: str) -> Optional[str]:
         """
@@ -263,23 +309,74 @@ class HedgeSystem:
         print(f"\n总结: {len(needs_hedge)}/{len(hedge_requirements)} 个标的需要对冲调整")
         print("=" * 80)
     
-    async def run_hedge_cycle(self, execute_trades: bool = False):
+    async def run_hedge_cycle(self, execute_trades: bool = False, continuous: bool = False):
         """
-        运行一次完整的对冲周期
+        运行对冲周期
         
         Args:
             execute_trades: 是否实际执行交易，默认False（仅分析）
+            continuous: 是否持续运行，默认False（单次执行）
         """
-        logger.info("开始对冲分析...")
+        logger.info(f"启动对冲周期 - {'持续模式' if continuous else '单次模式'} - ")
+        if continuous:
+            # 持续运行模式
+            logger.info(f"{'='*50}")
+            logger.info(f"启动持续对冲模式 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info(f"执行模式: {'实际交易' if execute_trades else '仅分析'}")
+            logger.info(f"对冲阈值: {self.threshold_pct}%")
+            logger.info(f"检查间隔: {self.hedge_interval}秒")
+            self.auto_hedge_enabled = True
+            
+            cycle_count = 0
+            while self.auto_hedge_enabled:
+                cycle_count += 1
+                try:
+                    logger.info(f"开始第 {cycle_count} 次对冲检查...")
+                    await self._execute_single_hedge_cycle(execute_trades)
+                    
+                    if self.auto_hedge_enabled:
+                        logger.info(f"等待 {self.hedge_interval} 秒后进行下次检查...")
+                        await asyncio.sleep(self.hedge_interval)
+                        
+                except Exception as e:
+                    logger.error(f"第 {cycle_count} 次对冲检查失败: {e}", exc_info=True)
+                    print(f"❌ 对冲检查出错: {e}")
+                    if self.auto_hedge_enabled:
+                        logger.info("等待30秒后重试...")
+                        await asyncio.sleep(30)
+            
+            logger.info(f"持续对冲模式已停止 - 共执行了 {cycle_count} 次检查")
+            logger.info(f"{'='*50}")
+        else:
+            # 单次执行模式
+            logger.info(f"启动对冲周期 - '单次模式' ")
+            await self._execute_single_hedge_cycle(execute_trades)
+    
+    async def _execute_single_hedge_cycle(self, execute_trades: bool = False):
+        """执行单次对冲周期"""
+        cycle_start_time = datetime.now()
+        logger.info(f"{'='*50}")
+        logger.info(f"开始对冲周期分析 - {cycle_start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"执行模式: {'实际交易' if execute_trades else '仅分析'}")
+        logger.info(f"对冲阈值: {self.threshold_pct}%")
         
         try:
             # 更新所有期权的delta值
-            logger.info("更新期权delta值...")
             updated_count = self.db.update_all_deltas()
-            logger.info(f"已更新{updated_count}个期权的delta值")
+            logger.info(f"步骤1: 成功更新 {updated_count} 个期权的delta值")
             
             # 计算对冲需求
             hedge_requirements = self.get_hedge_requirements()
+            logger.info(f"步骤2: 计算对冲需求，发现 {len(hedge_requirements)} 个标的资产")
+            
+            # 记录详细的对冲需求信息
+            for req in hedge_requirements:
+                logger.info(f"标的 {req.underlying_symbol}: Delta={req.current_delta:.4f}, "
+                           f"当前价格=${req.current_price:.2f}, "
+                           f"需要对冲={req.required_hedge_amount:.4f}, "
+                           f"当前持仓={req.current_position:.4f}, "
+                           f"差距={req.position_diff:.4f}, "
+                           f"超过阈值={'是' if req.threshold_met else '否'}")
             
             # 显示分析结果
             self.display_hedge_status(hedge_requirements)
@@ -289,29 +386,71 @@ class HedgeSystem:
                 needs_hedge = [req for req in hedge_requirements if req.threshold_met]
                 
                 if needs_hedge:
-                    logger.info(f"准备执行{len(needs_hedge)}个对冲交易...")
+                    logger.info(f"步骤3: 执行对冲交易，共需处理 {len(needs_hedge)} 个标的...")
                     
-                    for req in needs_hedge:
-                        logger.info(f"处理{req.underlying_symbol}的对冲...")
+                    success_count = 0
+                    for i, req in enumerate(needs_hedge, 1):
+                        logger.info(f"处理 {i}/{len(needs_hedge)}: {req.underlying_symbol} "
+                                   f"({req.action_needed} {req.position_diff:.4f})")
+                        
                         tx_hash = await self.execute_hedge_order(req)
                         
                         if tx_hash:
-                            # print(f"✅ {req.underlying_symbol} 对冲完成: {tx_hash}")
-                            print(f"✅ {req.underlying_symbol} 对冲完成 ")
+                            logger.info(f"✅ {req.underlying_symbol} 对冲交易成功")
+                            print(f"✅ {req.underlying_symbol} 对冲完成")
+                            success_count += 1
                         else:
+                            logger.error(f"❌ {req.underlying_symbol} 对冲交易失败")
                             print(f"❌ {req.underlying_symbol} 对冲失败")
                         
                         # 等待一小段时间避免请求过于频繁
                         await asyncio.sleep(1)
+                    
+                    logger.info(f"对冲交易完成: 成功 {success_count}/{len(needs_hedge)} 个")
                 else:
-                    logger.info("当前不需要执行任何对冲交易")
+                    logger.info("步骤3: 当前所有标的都在阈值范围内，无需执行对冲交易")
             else:
-                logger.info("分析完成（未执行实际交易）")
+                needs_hedge_count = len([req for req in hedge_requirements if req.threshold_met])
+                logger.info(f"分析完成: {needs_hedge_count} 个标的需要对冲（未执行实际交易）")
+            
+            # 记录周期完成信息
+            cycle_end_time = datetime.now()
+            duration = (cycle_end_time - cycle_start_time).total_seconds()
+            logger.info(f"对冲周期完成 - 耗时 {duration:.2f} 秒")
+            logger.info(f"{'='*50}")
                 
         except Exception as e:
-            logger.error(f"对冲周期执行失败: {e}")
+            logger.error(f"对冲周期执行失败: {e}", exc_info=True)
+            print(f"❌ 对冲系统错误: {e}")
         finally:
-            await self.trader.disconnect()
+            try:
+                await self.trader.disconnect()
+                logger.debug("交易客户端连接已断开")
+            except Exception as e:
+                logger.warning(f"断开交易客户端时出错: {e}")
+    
+    def stop_auto_hedge(self):
+        """停止自动对冲"""
+        self.auto_hedge_enabled = False
+        logger.info("接收到停止自动对冲信号")
+        
+    def start_auto_hedge(self):
+        """启动自动对冲"""
+        self.auto_hedge_enabled = True
+        logger.info("自动对冲已启用")
+            
+            
+    def set_hedge_interval(self, interval: int=10):
+        """设置对冲检查间隔"""
+        if interval > 0:
+            self.hedge_interval = interval
+            logger.info(f"对冲检查间隔已设置为 {interval} 秒")
+        else:
+            logger.warning(f"无效的间隔时间: {interval}")
+    
+    def is_auto_hedge_enabled(self) -> bool:
+        """检查自动对冲是否启用"""
+        return self.auto_hedge_enabled
 
 async def main():
     """示例用法"""
