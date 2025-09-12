@@ -1,597 +1,364 @@
 #!/usr/bin/env python3
 """
-期权对冲管理系统 CLI主程序
-整合所有功能模块，提供命令行交互界面
+期权交易和对冲系统命令行界面
+提供期权仓位管理和自动对冲功能
 """
 
-import sys
 import asyncio
-from command_parser import CommandParser, Command
-from position_manager import PositionManager
-from display_manager import DisplayManager
-from hedge_engine import HedgeEngine
+from option_positions_db import OptionPositionsDB
+from hedge_system import HedgeSystem
 
-
-class HedgeCLI:
-    """期权对冲管理CLI"""
+class TradingCLI:
+    """交易系统命令行界面"""
     
     def __init__(self):
-        self.parser = CommandParser()
-        self.position_manager = PositionManager()
-        self.display_manager = DisplayManager()
-        self.hedge_engine = HedgeEngine()
+        self.db = OptionPositionsDB()
+        self.hedge_system = HedgeSystem(threshold_pct=5.0)
         self.running = True
-        self.auto_hedge_enabled = False  # 自动对冲开关
+        self.hedge_task = None  # 用于跟踪后台对冲任务
     
-    def run(self):
-        """运行CLI主循环"""
-        print("🚀 启动期权对冲管理系统...")
-        
-        try:
-            # 显示欢迎信息
-            self.display_manager.display_welcome()
-            
-            # 主循环
-            while self.running:
-                try:
-                    # 获取用户输入
-                    user_input = input("\n💬 请输入命令 (help 查看帮助): ").strip()
-                    
-                    if not user_input:
-                        continue
-                    
-                    # 解析命令
-                    command = self.parser.parse(user_input)
-                    
-                    # 执行命令
-                    self.execute_command(command)
-                    
-                except KeyboardInterrupt:
-                    print("\n\n⚠️  检测到Ctrl+C，正在退出...")
-                    self.running = False
-                except EOFError:
-                    print("\n\n👋 检测到EOF，正在退出...")
-                    self.running = False
-                except Exception as e:
-                    print(f"❌ 执行命令时出错: {e}")
-            
-        except Exception as e:
-            print(f"❌ 系统错误: {e}")
-        finally:
-            print("\n👋 感谢使用期权对冲管理系统!")
+    def display_help(self):
+        """显示帮助信息"""
+        print("\n" + "="*60)
+        print("期权交易和对冲系统 - 命令帮助")
+        print("="*60)
+        print("\n📊 仓位管理命令:")
+        print("  add <symbol> <quantity>     - 添加期权仓位")
+        print("    示例: add SOL-USD-215-C 5")
+        print("  remove <symbol> <quantity>  - 减少期权仓位")
+        print("    示例: remove SOL-USD-215-C 2")
+        print("  show                        - 显示所有仓位")
+        print("  show <symbol>               - 显示特定期权仓位")
+        print("  clear                       - 清空所有仓位")
+        print("  update                      - 更新所有仓位的delta值")
+        print("\n🔄 对冲管理命令:")
+        print("  autohedge on                - 开启自动对冲")
+        print("  autohedge off               - 关闭自动对冲")
+        print("  autohedge status            - 查看自动对冲状态")
+        print("  hedge analyze               - 分析对冲需求（不执行交易）")
+        print("  hedge execute               - 执行对冲交易")
+        print("  threshold <percentage>      - 设置对冲阈值（默认5%）")
+        print("  interval <seconds>          - 设置对冲检查间隔（默认60秒，最少10秒）")
+        print("\n💡 其他命令:")
+        print("  log                         - 显示日志文件路径")
+        print("  help                        - 显示此帮助信息")
+        print("  quit/exit                   - 退出程序")
+        print("="*60)
     
-    def execute_command(self, command: Command):
-        """
-        执行命令
-        
-        Args:
-            command: 解析后的命令对象
-        """
-        if command.action == 'empty':
+    def display_welcome(self):
+        """显示欢迎信息"""
+        print("\n🚀 欢迎使用期权交易和对冲系统!")
+        print("输入 'help' 查看命令列表，'quit' 退出程序")
+        log_file = self.hedge_system.get_log_filename()
+        print(f"📝 日志文件: {log_file}")
+        print(f"💡 提示: 可以使用 'tail -f {log_file}' 实时查看详细日志\n")
+    
+    async def handle_add_position(self, parts):
+        """处理添加仓位命令"""
+        if len(parts) != 3:
+            print("❌ 用法: add <symbol> <quantity>")
+            print("   示例: add SOL-USD-215-C 5")
             return
         
-        elif command.action == 'unknown':
-            print(f"❓ 未知命令: {command.params.get('input', '')}")
-            print("💡 输入 'help' 查看可用命令")
+        symbol = parts[1]
+        try:
+            quantity = int(parts[2])
+            success = self.db.add_position(symbol, quantity)
+            if success:
+                print(f"✅ 成功添加仓位: {symbol} {quantity}张")
+            else:
+                print(f"❌ 添加仓位失败: {symbol}")
+        except ValueError:
+            print("❌ 数量必须是整数")
+    
+    async def handle_remove_position(self, parts):
+        """处理减少仓位命令"""
+        if len(parts) != 3:
+            print("❌ 用法: remove <symbol> <quantity>")
+            print("   示例: remove SOL-USD-215-C 2")
+            return
         
-        elif command.action == 'error':
-            print(f"❌ {command.params.get('message', '命令错误')}")
-        
-        elif command.action == 'add':
-            self._handle_add_command(command)
-        
-        elif command.action == 'delete':
-            self._handle_delete_command(command)
-        
-        elif command.action == 'show':
-            self._handle_show_command(command)
-        
-        elif command.action == 'status':
-            self._handle_status_command()
-        
-        elif command.action == 'hedge':
-            asyncio.run(self._handle_hedge_command(command))
-        
-        elif command.action == 'threshold':
-            self._handle_threshold_command(command)
-        
-        elif command.action == 'autohedge':
-            self._handle_autohedge_command(command)
-        
-        elif command.action == 'clear':
-            self._handle_clear_command()
-        
-        elif command.action == 'help':
-            self._handle_help_command()
-        
-        elif command.action == 'exit':
-            self._handle_exit_command()
-        
+        symbol = parts[1]
+        try:
+            quantity = int(parts[2])
+            success = self.db.remove_position(symbol, quantity)
+            if success:
+                print(f"✅ 成功减少仓位: {symbol} {quantity}张")
+            else:
+                print(f"❌ 减少仓位失败: {symbol}")
+        except ValueError:
+            print("❌ 数量必须是正整数")
+    
+    async def handle_show_positions(self, parts):
+        """处理显示仓位命令"""
+        if len(parts) == 1:
+            # 显示所有仓位
+            self.db.display_all_positions()
+        elif len(parts) == 2:
+            # 显示特定仓位
+            symbol = parts[1]
+            position = self.db.get_position(symbol)
+            if position:
+                print(f"\n仓位信息 - {symbol}:")
+                print(f"  数量: {position['quantity']}张")
+                print(f"  Delta: {position['delta']:.4f}")
+                print(f"  仓位Delta: {position['quantity'] * position['delta']:.4f}")
+                print(f"  更新时间: {position['updated_at']}")
+            else:
+                print(f"❌ 未找到期权 {symbol} 的仓位")
         else:
-            print(f"❓ 不支持的命令动作: {command.action}")
+            print("❌ 用法: show 或 show <symbol>")
     
-    def _handle_add_command(self, command: Command):
-        """处理add命令"""
-        try:
-            success = self.position_manager.add_position(
-                command.symbol, 
-                command.operation, 
-                command.quantity
-            )
-            
+    async def handle_clear_positions(self):
+        """处理清空仓位命令"""
+        print("⚠️  确定要清空所有仓位吗？这个操作不可撤销！")
+        confirm = input("输入 'yes' 确认: ").strip().lower()
+        if confirm == 'yes':
+            success = self.db.clear_all_positions()
             if success:
-                print(f"\n📊 更新后的仓位汇总:")
-                self.display_manager.display_summary_table()
-                
-                # 如果开启了自动对冲，检查是否需要对冲
-                if self.auto_hedge_enabled:
-                    print(f"\n🤖 自动对冲已开启，检查对冲需求...")
-                    asyncio.run(self._auto_check_hedge())
-            
-        except Exception as e:
-            print(f"❌ 添加仓位失败: {e}")
+                print("✅ 所有仓位已清空")
+            else:
+                print("❌ 清空仓位失败")
+        else:
+            print("操作已取消")
     
-    def _handle_delete_command(self, command: Command):
-        """处理delete命令"""
-        try:
-            success = self.position_manager.remove_position(
-                command.symbol, 
-                command.quantity
-            )
-            
-            if success:
-                print(f"\n📊 更新后的仓位汇总:")
-                self.display_manager.display_summary_table()
-                
-                # 如果开启了自动对冲，检查是否需要对冲
-                if self.auto_hedge_enabled:
-                    print(f"\n🤖 自动对冲已开启，检查对冲需求...")
-                    asyncio.run(self._auto_check_hedge())
-            
-        except Exception as e:
-            print(f"❌ 平仓失败: {e}")
+    async def handle_update_deltas(self):
+        """处理更新delta命令"""
+        print("📈 正在更新所有仓位的delta值...")
+        count = self.db.update_all_deltas()
+        print(f"✅ 已更新 {count} 个仓位的delta值")
     
-    def _handle_show_command(self, command: Command):
-        """处理show命令"""
-        try:
-            operation = command.operation or 'all'
-            
-            if operation == 'positions':
-                self.display_manager.display_positions_table()
-            
-            elif operation == 'orders':
-                self.display_manager.display_orders_table()
-            
-            elif operation == 'summary':
-                self.display_manager.display_summary_table()
-            
-            elif operation == 'all':
-                print("\n📝 期权仓位:")
-                self.display_manager.display_positions_table()
-                print("\n📊 仓位汇总:")
-                self.display_manager.display_summary_table()
-                print("\n📋 最近订单:")
-                self.display_manager.display_orders_table()
-            
-        except Exception as e:
-            print(f"❌ 显示信息失败: {e}")
-    
-    def _handle_status_command(self):
-        """处理status命令"""
-        try:
-            # 传递自动对冲状态信息
-            self.display_manager.display_realtime_status(
-                auto_hedge_enabled=self.auto_hedge_enabled,
-                hedge_threshold=self.hedge_engine.hedge_threshold
-            )
-        except Exception as e:
-            print(f"❌ 显示状态失败: {e}")
-    
-    async def _handle_hedge_command(self, command: Command):
-        """处理hedge命令"""
-        try:
-            operation = command.operation or 'execute'
-            
-            # 获取当前仓位状态
-            status = self.position_manager.get_position_status()
-            positions = status['positions']
-            delta_summary = status['delta_summary']
-            
-            if not positions:
-                print("📝 当前没有期权仓位，无需对冲")
+    async def handle_autohedge(self, parts):
+        """处理自动对冲命令"""
+        if len(parts) != 2:
+            print("❌ 用法: autohedge on/off/status")
+            return
+        
+        action = parts[1].lower()
+        if action == "on":
+            if self.hedge_system.is_auto_hedge_enabled():
+                print("⚠️ 自动对冲已经在运行中")
                 return
             
-            if operation == 'check':
-                # 仅检查对冲需求，不执行
-                print(f"\n🔍 对冲需求检查 (阈值: {self.hedge_engine.hedge_threshold*100:.1f}%)")
-                recommendations = self.hedge_engine.check_hedge_requirement(delta_summary)
-                
-                if recommendations:
-                    self.hedge_engine.display_hedge_recommendations(recommendations)
-                else:
-                    print("✅ 当前无需对冲")
+            print("✅ 启动自动对冲...")
+            print(f"🤖 开始持续对冲监控，每{self.hedge_system.hedge_interval}秒检查一次")
+            self.hedge_system.start_auto_hedge()
             
-            elif operation == 'execute':
-                # 执行完整的对冲流程
-                success = await self.hedge_engine.run_hedge_cycle(positions, delta_summary)
+            # 启动持续对冲任务
+            try:
+                self.hedge_task = asyncio.create_task(
+                self.hedge_system.run_hedge_cycle(execute_trades=True, continuous=True)
+                )
                 
-                if success:
-                    print("\n📊 对冲完成后的仓位状态:")
-                    self.display_manager.display_summary_table()
-                
-        except Exception as e:
-            print(f"❌ 处理对冲命令失败: {e}")
-    
-    def _handle_threshold_command(self, command: Command):
-        """处理threshold命令"""
-        try:
-            operation = command.operation or 'show'
-            
-            if operation == 'show':
-                current = self.hedge_engine.hedge_threshold * 100
-                print(f"📊 当前对冲阈值: {current:.1f}%")
-                print("💡 当Delta变化超过此阈值时，系统将建议执行对冲")
-                
-            elif operation == 'set':
-                new_threshold = command.params.get('value', 0.05)
-                self.hedge_engine.hedge_threshold = new_threshold
-                
-                print(f"✅ 对冲阈值已设置为: {new_threshold*100:.1f}%")
-                
-        except Exception as e:
-            print(f"❌ 处理阈值命令失败: {e}")
-    
-    def _handle_autohedge_command(self, command: Command):
-        """处理autohedge命令"""
-        try:
-            operation = command.operation or 'status'
-            
-            if operation == 'status':
-                status = "🟢 开启" if self.auto_hedge_enabled else "🔴 关闭"
-                print(f"🤖 自动对冲状态: {status}")
-                if self.auto_hedge_enabled:
-                    print(f"   对冲阈值: {self.hedge_engine.hedge_threshold*100:.1f}%")
-                    print(f"   💡 仓位变动时将自动检查对冲需求")
-                else:
-                    print(f"   💡 需要手动执行 'hedge' 命令进行对冲")
-                    
-            elif operation == 'enable':
-                self.auto_hedge_enabled = True
-                print(f"✅ 自动对冲已开启")
-                print(f"   阈值: {self.hedge_engine.hedge_threshold*100:.1f}%")
-                print(f"   🚀 仓位变动时将自动检查并提示对冲")
-                
-            elif operation == 'disable':
-                self.auto_hedge_enabled = False
-                print(f"❌ 自动对冲已关闭")
-                print(f"   💡 如需对冲请手动执行 'hedge' 命令")
-                
-        except Exception as e:
-            print(f"❌ 处理自动对冲命令失败: {e}")
-    
-    async def _auto_check_hedge(self):
-        """自动检查对冲需求"""
-        try:
-            # 获取当前状态
-            status = self.position_manager.get_position_status()
-            positions = status['positions']
-            delta_summary = status['delta_summary']
-            
-            if not positions:
+            except Exception as e:
+                print(f"❌ 启动自动对冲失败: {e}")
+                self.hedge_system.stop_auto_hedge()
+                self.hedge_task = None
                 return
             
-            # 检查对冲需求
-            recommendations = self.hedge_engine.check_hedge_requirement(delta_summary)
-            required_hedges = [r for r in recommendations if r.is_required]
-            
-            if required_hedges:
-                print(f"\n⚠️  检测到需要对冲的Delta敞口:")
-                for rec in required_hedges:
-                    print(f"   🎯 {rec.underlying}: Delta={rec.current_delta:+.6f}, "
-                          f"建议{rec.hedge_side} {rec.required_hedge_amount:.4f}")
+        elif action == "off":
+            if not self.hedge_system.is_auto_hedge_enabled():
+                print("⚠️ 自动对冲未启动")
+                return
                 
-                # 询问用户是否立即执行对冲
+            print("🛑 正在停止自动对冲...")
+            self.hedge_system.stop_auto_hedge()
+            
+            # 等待任务完成
+            if self.hedge_task:
                 try:
-                    confirm = input("\n🤖 是否立即执行自动对冲? [yes/no/later]: ").strip().lower()
+                    await asyncio.wait_for(self.hedge_task, timeout=5.0)
+                except asyncio.TimeoutError:
+                    print("⚠️ 自动对冲任务停止超时，强制取消")
+                    self.hedge_task.cancel()
+                except Exception as e:
+                    print(f"⚠️ 停止自动对冲时出错: {e}")
+                finally:
+                    self.hedge_task = None
                     
-                    if confirm in ['yes', 'y', '是']:
-                        print(f"\n🚀 执行自动对冲...")
-                        success = await self.hedge_engine.run_hedge_cycle(positions, delta_summary)
-                        if success:
-                            print(f"✅ 自动对冲执行完成")
-                        else:
-                            print(f"❌ 自动对冲执行失败")
-                    elif confirm in ['later', 'l', '稍后']:
-                        print(f"📝 已记录对冲需求，稍后可使用 'hedge' 命令执行")
-                    else:
-                        print(f"❌ 已跳过自动对冲")
-                        
-                except (KeyboardInterrupt, EOFError):
-                    print(f"\n❌ 自动对冲已取消")
-            else:
-                print(f"✅ Delta敞口在可接受范围内，无需对冲")
-                
-        except Exception as e:
-            print(f"❌ 自动对冲检查失败: {e}")
-    
-    def _handle_clear_command(self):
-        """处理clear命令"""
-        try:
-            # 确认操作
-            confirm = input("⚠️  确认要清空所有仓位记录吗? (yes/no): ").strip().lower()
+            print("❌ 自动对冲已关闭")
             
-            if confirm in ['yes', 'y', '是']:
-                self.position_manager.clear_all_positions()
+        elif action == "status":
+            is_enabled = self.hedge_system.is_auto_hedge_enabled()
+            status = "开启" if is_enabled else "关闭"
+            print(f"🔄 自动对冲状态: {status}")
+            print(f"📊 对冲阈值: {self.hedge_system.threshold_pct}%")
+            print(f"⏰ 检查间隔: {self.hedge_system.hedge_interval}秒")
+            if is_enabled and self.hedge_task:
+                print(f"🏃 后台任务状态: {'运行中' if not self.hedge_task.done() else '已完成'}")
+        else:
+            print("❌ 无效选项，请使用: on/off/status")
+    
+    async def handle_hedge(self, parts):
+        """处理对冲命令"""
+        if len(parts) != 2:
+            print("❌ 用法: hedge analyze/execute")
+            return
+        
+        action = parts[1].lower()
+        if action == "analyze":
+            print("📊 分析对冲需求...")
+            await self.hedge_system.run_hedge_cycle(execute_trades=False)
+        elif action == "execute":
+            print("⚠️  确定要执行对冲交易吗？")
+            confirm = input("输入 'yes' 确认执行实际交易: ").strip().lower()
+            if confirm == 'yes':
+                print("🔄 执行对冲交易...")
+                await self.hedge_system.run_hedge_cycle(execute_trades=True, continuous=True)
             else:
-                print("❌ 操作已取消")
-                
+                print("操作已取消")
+        else:
+            print("❌ 无效选项，请使用: analyze/execute")
+    
+    async def handle_threshold(self, parts):
+        """处理阈值设置命令"""
+        if len(parts) != 2:
+            print("❌ 用法: threshold <percentage>")
+            print("   示例: threshold 3.0")
+            return
+        
+        try:
+            threshold = float(parts[1])
+            if threshold <= 0 or threshold > 100:
+                print("❌ 阈值必须在0-100之间")
+                return
+            
+            self.hedge_system.threshold_pct = threshold
+            print(f"✅ 对冲阈值已设置为 {threshold}%")
+        except ValueError:
+            print("❌ 阈值必须是数字")
+    
+    async def handle_log_info(self):
+        """显示日志文件信息"""
+        log_file = self.hedge_system.get_log_filename()
+        print(f"\n📝 当前日志文件: {log_file}")
+        print(f"💡 实时查看日志: tail -f {log_file}")
+        print(f"📊 查看最近日志: tail -n 50 {log_file}")
+        
+        # 尝试显示日志文件大小
+        try:
+            import os
+            if os.path.exists(log_file):
+                size = os.path.getsize(log_file)
+                if size < 1024:
+                    print(f"📁 文件大小: {size} 字节")
+                elif size < 1024 * 1024:
+                    print(f"📁 文件大小: {size / 1024:.1f} KB")
+                else:
+                    print(f"📁 文件大小: {size / (1024 * 1024):.1f} MB")
+            else:
+                print("⚠️ 日志文件尚未创建")
         except Exception as e:
-            print(f"❌ 清空仓位失败: {e}")
+            print(f"⚠️ 无法获取日志文件信息: {e}")
     
-    def _handle_help_command(self):
-        """处理help命令"""
-        self.display_manager.display_help()
+    async def handle_interval(self, parts):
+        """处理对冲间隔设置命令"""
+        if len(parts) != 2:
+            print("❌ 用法: interval <seconds>")
+            print("   示例: interval 30")
+            return
+        
+        try:
+            interval = int(parts[1])
+            if interval < 10:
+                print("❌ 间隔时间不能少于10秒")
+                return
+            
+            self.hedge_system.set_hedge_interval(interval)
+            print(f"✅ 对冲检查间隔已设置为 {interval} 秒")
+        except ValueError:
+            print("❌ 间隔时间必须是整数")
+
+    async def process_command(self, command: str):
+        """处理用户命令"""
+        command = command.strip()
+        if not command:
+            return
+        
+        parts = command.split()
+        cmd = parts[0].lower()
+        
+        try:
+            if cmd in ['quit', 'exit']:
+                print("👋 再见！")
+                await self._cleanup_and_exit()
+            elif cmd == 'help':
+                self.display_help()
+            elif cmd == 'add':
+                await self.handle_add_position(parts)
+            elif cmd == 'remove':
+                await self.handle_remove_position(parts)
+            elif cmd == 'show':
+                await self.handle_show_positions(parts)
+            elif cmd == 'clear':
+                await self.handle_clear_positions()
+            elif cmd == 'update':
+                await self.handle_update_deltas()
+            elif cmd == 'autohedge':
+                await self.handle_autohedge(parts)
+            elif cmd == 'hedge':
+                await self.handle_hedge(parts)
+            elif cmd == 'threshold':
+                await self.handle_threshold(parts)
+            elif cmd == 'interval':
+                await self.handle_interval(parts)
+            elif cmd == 'log':
+                await self.handle_log_info()
+            else:
+                print(f"❌ 未知命令: {cmd}")
+                print("输入 'help' 查看可用命令")
+        except Exception as e:
+            print(f"❌ 命令执行出错: {e}")
     
-    def _handle_exit_command(self):
-        """处理exit命令"""
-        print("👋 正在退出系统...")
+    async def run(self):
+        """运行CLI主循环"""
+        self.display_welcome()
+        
+        while self.running:
+            try:
+                # 显示提示符
+                status_indicator = "🟢" if self.hedge_system.is_auto_hedge_enabled() else "🔴"
+                prompt = f"{status_indicator} 期权交易系统> "
+                
+                # 获取用户输入
+                command = input(prompt).strip()
+                if command:
+                    await self.process_command(command)
+                    
+            except KeyboardInterrupt:
+                print("\n\n👋 程序被用户中断，正在退出...")
+                await self._cleanup_and_exit()
+            except EOFError:
+                print("\n👋 再见！")
+                await self._cleanup_and_exit()
+            except Exception as e:
+                print(f"❌ 系统错误: {e}")
+    
+    async def _cleanup_and_exit(self):
+        """清理资源并退出"""
         self.running = False
-    
-    def display_startup_info(self):
-        """显示启动信息"""
-        print("\n" + "=" * 60)
-        print("🔍 系统自检...")
         
-        try:
-            # 检查数据库连接
-            positions = self.position_manager.db.get_active_option_positions()
-            print(f"✅ 数据库连接正常，当前有 {len(positions)} 个活跃仓位")
+        # 停止自动对冲
+        if self.hedge_system.is_auto_hedge_enabled():
+            print("🛑 正在停止自动对冲...")
+            self.hedge_system.stop_auto_hedge()
             
-            # 检查API连接
-            try:
-                markets = self.position_manager.paradex_api.get_option_markets()
-                print(f"✅ Paradex API连接正常，获取到 {len(markets)} 个期权")
-            except Exception as e:
-                print(f"⚠️  Paradex API连接异常: {e}")
-            
-            try:
-                sol_data = self.position_manager.lighter_api.get_market_by_symbol("SOL")
-                print(f"✅ Lighter API连接正常，SOL价格: ${sol_data.last_trade_price}")
-            except Exception as e:
-                print(f"⚠️  Lighter API连接异常: {e}")
-            
-        except Exception as e:
-            print(f"❌ 系统自检失败: {e}")
-        
-        print("=" * 60)
+            if self.hedge_task:
+                try:
+                    await asyncio.wait_for(self.hedge_task, timeout=3.0)
+                except asyncio.TimeoutError:
+                    print("⚠️ 强制取消自动对冲任务")
+                    self.hedge_task.cancel()
+                except Exception:
+                    pass
+                finally:
+                    self.hedge_task = None
 
-
-def main():
+async def main():
     """主函数"""
-    # 检查Python版本
-    if sys.version_info < (3, 7):
-        print("❌ 需要Python 3.7或更高版本")
-        sys.exit(1)
-    
-    try:
-        # 创建并运行CLI
-        cli = HedgeCLI()
-        cli.display_startup_info()
-        cli.run()
-        
-    except KeyboardInterrupt:
-        print("\n\n⚠️  程序被中断")
-    except Exception as e:
-        print(f"❌ 程序运行错误: {e}")
-    finally:
-        print("\n🔚 程序已退出")
-
+    cli = TradingCLI()
+    await cli.run()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
 
-    
-# #!/usr/bin/env python3
-# """
-# 主程序文件
-# 整合Paradex期权信息和Lighter市场信息的展示
-# """
-
-# import random
-# from paradex_market import ParadexAPI
-# from lighter_market import LighterMarketAPI
-
-
-# def display_header(title: str):
-#     """显示标题"""
-#     print("\n" + "=" * 70)
-#     print(f"  {title}")
-#     print("=" * 70)
-
-
-# def display_random_option_deltas():
-#     """展示四个随机期权的delta值"""
-#     display_header("Paradex 随机期权 Delta 值展示")
-    
-#     try:
-#         paradex_api = ParadexAPI()
-        
-#         # 获取所有期权合约
-#         print("正在获取期权数据...")
-#         option_markets = paradex_api.get_option_markets()
-        
-#         if len(option_markets) == 0:
-#             print("❌ 未找到期权合约数据")
-#             return
-        
-#         print(f"✅ 找到 {len(option_markets)} 个期权合约")
-        
-#         # 随机选择4个期权
-#         num_to_show = min(4, len(option_markets))
-#         random_options = random.sample(option_markets, num_to_show)
-        
-#         print(f"\n随机选择的 {num_to_show} 个期权合约:")
-#         print("-" * 70)
-#         print(f"{'序号':<4} {'合约代码':<20} {'Delta值':<12} {'标记价格':<12} {'隐含波动率':<12}")
-#         print("-" * 70)
-        
-#         for i, option in enumerate(random_options, 1):
-#             delta = paradex_api.get_option_delta(option.symbol)
-#             mark_price = f"${option.mark_price:.4f}" if option.mark_price else "N/A"
-#             mark_iv = f"{option.mark_iv:.4f}" if option.mark_iv else "N/A"
-#             delta_str = f"{delta:.6f}" if delta is not None else "N/A"
-            
-#             print(f"{i:<4} {option.symbol:<20} {delta_str:<12} {mark_price:<12} {mark_iv:<12}")
-        
-#         # 显示详细信息
-#         print("\n详细信息:")
-#         print("-" * 70)
-        
-#         for i, option in enumerate(random_options, 1):
-#             print(f"\n[{i}] {option.symbol}")
-#             print(f"    合约类型: {option.contract_type}")
-#             print(f"    Delta: {option.delta}")
-#             print(f"    标记价格: ${option.mark_price}")
-#             if option.mark_iv:
-#                 print(f"    标记隐含波动率: {option.mark_iv:.4f}")
-#             if option.greeks:
-#                 print(f"    Greeks: ")
-#                 for key, value in option.greeks.items():
-#                     if isinstance(value, str):
-#                         try:
-#                             value = float(value)
-#                             print(f"      {key}: {value:.6f}")
-#                         except:
-#                             print(f"      {key}: {value}")
-#                     else:
-#                         print(f"      {key}: {value}")
-    
-#     except Exception as e:
-#         print(f"❌ 获取期权数据时发生错误: {e}")
-
-
-# def display_market_precision_info():
-#     """展示SOL, HYPE, ETH, BTC四个市场的下单精度和价格"""
-#     display_header("Lighter 市场精度与价格信息")
-    
-#     try:
-#         lighter_api = LighterMarketAPI()
-#         target_symbols = ["SOL", "HYPE", "ETH", "BTC"]
-        
-#         print("正在获取市场数据...")
-        
-#         # 获取所有市场数据
-#         markets = {}
-#         for symbol in target_symbols:
-#             market_data = lighter_api.get_market_by_symbol(symbol)
-#             if market_data:
-#                 markets[symbol] = market_data
-#             else:
-#                 print(f"⚠️  无法获取 {symbol} 市场数据")
-        
-#         if not markets:
-#             print("❌ 未能获取任何市场数据")
-#             return
-        
-#         print(f"✅ 成功获取 {len(markets)} 个市场的数据\n")
-        
-#         # 显示概览表格
-#         print("市场精度概览:")
-#         print("-" * 90)
-#         print(f"{'币种':<6} {'Market ID':<10} {'当前价格':<12} {'Size精度':<8} {'Price精度':<9} {'最小数量单位':<12} {'最小价格单位':<12}")
-#         print("-" * 90)
-        
-#         for symbol in target_symbols:
-#             if symbol in markets:
-#                 market = markets[symbol]
-#                 min_amount_unit = 1 / (10 ** market.size_decimals)
-#                 min_price_unit = 1 / (10 ** market.price_decimals)
-                
-#                 print(f"{symbol:<6} {market.market_id:<10} ${market.last_trade_price:<11.4f} "
-#                       f"{market.size_decimals:<8} {market.price_decimals:<9} "
-#                       f"{min_amount_unit:<12} ${min_price_unit:<11}")
-        
-#         # 显示详细信息
-#         print("\n详细市场信息:")
-#         print("-" * 90)
-        
-#         for symbol in target_symbols:
-#             if symbol in markets:
-#                 market = markets[symbol]
-#                 print(f"\n📊 {symbol} (Market ID: {market.market_id})")
-#                 print(f"   状态: {market.status}")
-#                 print(f"   当前价格: ${market.last_trade_price:,.4f}")
-#                 print(f"   24小时涨跌: {market.daily_price_change:+.2f}%")
-#                 print(f"   24小时交易量: {market.daily_base_token_volume:,.2f} {symbol}")
-#                 print(f"   24小时交易额: ${market.daily_quote_token_volume:,.2f}")
-#                 print(f"   ")
-#                 print(f"   📏 精度信息:")
-#                 print(f"      Size Decimals: {market.size_decimals} (最小数量: {1/(10**market.size_decimals):.{market.size_decimals}f} {symbol})")
-#                 print(f"      Price Decimals: {market.price_decimals} (最小价格单位: ${1/(10**market.price_decimals):.{market.price_decimals}f})")
-#                 print(f"      最小基础数量: {market.min_base_amount}")
-#                 print(f"      最小报价数量: {market.min_quote_amount}")
-#                 print(f"   ")
-#                 print(f"   💰 费率信息:")
-#                 print(f"      Maker费率: {market.maker_fee}%")
-#                 print(f"      Taker费率: {market.taker_fee}%")
-#                 print(f"      清算费率: {market.liquidation_fee}%")
-        
-#         # 显示下单示例
-#         print("\n" + "=" * 70)
-#         print("  下单精度示例")
-#         print("=" * 70)
-        
-#         for symbol in target_symbols:
-#             if symbol in markets:
-#                 market = markets[symbol]
-#                 current_price = market.last_trade_price
-#                 size_decimals = market.size_decimals
-#                 price_decimals = market.price_decimals
-                
-#                 # 示例数量和价格
-#                 example_amount = 1.0
-#                 example_price_offset = 0.01  # 价格偏移1%
-                
-#                 # 买入示例（价格稍高）
-#                 buy_price = current_price * (1 + example_price_offset)
-#                 buy_price_formatted = round(buy_price, price_decimals)
-                
-#                 # 卖出示例（价格稍低）
-#                 sell_price = current_price * (1 - example_price_offset)
-#                 sell_price_formatted = round(sell_price, price_decimals)
-                
-#                 print(f"\n{symbol} 下单示例:")
-#                 print(f"  当前价格: ${current_price:.{price_decimals}f}")
-#                 print(f"  买入 {example_amount:.{size_decimals}f} {symbol} @ ${buy_price_formatted:.{price_decimals}f}")
-#                 print(f"  卖出 {example_amount:.{size_decimals}f} {symbol} @ ${sell_price_formatted:.{price_decimals}f}")
-    
-#     except Exception as e:
-#         print(f"❌ 获取市场数据时发生错误: {e}")
-
-
-# def main():
-#     """主函数"""
-#     print("🚀 Paradex & Lighter 量化交易信息展示系统")
-#     print("=" * 70)
-    
-#     try:
-#         # 1. 展示随机期权的Delta值
-#         display_random_option_deltas()
-        
-#         # 2. 展示市场精度信息
-#         display_market_precision_info()
-        
-#         print("\n" + "=" * 70)
-#         print("✅ 信息展示完成!")
-#         print("=" * 70)
-        
-#     except KeyboardInterrupt:
-#         print("\n\n⚠️  程序被用户中断")
-#     except Exception as e:
-#         print(f"\n❌ 程序执行错误: {e}")
-#     finally:
-#         print("\n👋 感谢使用!")
-
-
-# if __name__ == "__main__":
-#     main()

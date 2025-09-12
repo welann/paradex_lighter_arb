@@ -26,8 +26,8 @@ class LighterTrader:
         # 从环境变量读取配置
         self.base_url = os.getenv("BASE_URL", "https://testnet.zklighter.elliot.ai")
         self.api_key_private_key = os.getenv("API_KEY_PRIVATE_KEY")
-        self.account_index = int(os.getenv("ACCOUNT_INDEX", "65"))
-        self.api_key_index = int(os.getenv("API_KEY_INDEX", "3"))
+        self.account_index = int(os.getenv("ACCOUNT_INDEX"))
+        self.api_key_index = int(os.getenv("API_KEY_INDEX"))
         
         # 检查必需的环境变量
         if not self.api_key_private_key:
@@ -123,22 +123,10 @@ class LighterTrader:
                 avg_execution_price=formatted_price,
                 is_ask=is_ask,
             )
-            
-            logger.info(f"✅ 订单提交成功: {tx_result}")
-            
-            # 提取交易哈希
-            if isinstance(tx_result, tuple) and len(tx_result) >= 2:
-                resp_obj = tx_result[1]  # 第二个元素是RespSendTx对象
-                if hasattr(resp_obj, 'tx_hash'):
-                    tx_hash = resp_obj.tx_hash
-                    logger.info(f"提取到交易哈希: {tx_hash}")
-                    return tx_hash
-                else:
-                    logger.warning("响应对象中未找到tx_hash属性")
-                    return str(tx_result)
-            else:
-                logger.info(f"订单响应格式不符合预期: {type(tx_result)}")
-                return str(tx_result)
+
+            # logger.info(f"订单创建成功: {tx}")
+            logger.info(f"订单创建成功")
+            return tx
             
         except Exception as e:
             logger.error(f"创建订单失败: {e}")
@@ -233,7 +221,7 @@ class LighterTrader:
         return int(amount * multiplier)
     
     def _format_price(self,price:float,price_decimals:int)->int:
-        multiplier = 10 ** (price_decimals-1)
+        multiplier = 10 ** (price_decimals)
         return int(price * multiplier)
     
     async def get_market_price(self, symbol: str) -> Optional[float]:
@@ -310,18 +298,21 @@ async def main():
     示例用法
     """
     trader = LighterTrader()
+    buy_or_sell = True  # buy=Fasle, sell=True
+    symbol = "SOL"
     
     try:
         # 获取SOL当前价格
-        current_price = await trader.get_market_price("BTC")
-        print(f"SOL当前价格: ${current_price}")
+        current_price = float(await trader.get_market_price(symbol))
+        print(f"{symbol}当前价格: ${current_price}")
         
+        order_price=current_price * 0.8  if buy_or_sell else current_price * 1.2
         # 示例：买入0.1个SOL，最高价格220
         tx = await trader.create_market_order(
-            symbol="SOL",
-            amount=1,
-            price=140,
-            is_ask=True  # False为买入
+            symbol=symbol,
+            amount=0.01,
+            price=order_price,
+            is_ask=buy_or_sell  # False为买入
         )
         print(f"买入订单: {tx}")
         
