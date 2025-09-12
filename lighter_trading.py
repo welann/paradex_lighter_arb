@@ -26,8 +26,8 @@ class LighterTrader:
         # 从环境变量读取配置
         self.base_url = os.getenv("BASE_URL", "https://testnet.zklighter.elliot.ai")
         self.api_key_private_key = os.getenv("API_KEY_PRIVATE_KEY")
-        self.account_index = int(os.getenv("ACCOUNT_INDEX", "65"))
-        self.api_key_index = int(os.getenv("API_KEY_INDEX", "3"))
+        self.account_index = int(os.getenv("ACCOUNT_INDEX"))
+        self.api_key_index = int(os.getenv("API_KEY_INDEX"))
         
         # 检查必需的环境变量
         if not self.api_key_private_key:
@@ -297,18 +297,21 @@ async def main():
     示例用法
     """
     trader = LighterTrader()
+    buy_or_sell = True  # buy=Fasle, sell=True
+    symbol = "SOL"
     
     try:
         # 获取SOL当前价格
-        current_price = await trader.get_market_price("BTC")
-        print(f"SOL当前价格: ${current_price}")
+        current_price = float(await trader.get_market_price(symbol))
+        print(f"{symbol}当前价格: ${current_price}")
         
+        order_price=current_price * 0.8  if buy_or_sell else current_price * 1.2
         # 示例：买入0.1个SOL，最高价格220
         tx = await trader.create_market_order(
-            symbol="SOL",
-            amount=1,
-            price=140,
-            is_ask=True  # False为买入
+            symbol=symbol,
+            amount=0.01,
+            price=order_price,
+            is_ask=buy_or_sell  # False为买入
         )
         print(f"买入订单: {tx}")
         
