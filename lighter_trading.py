@@ -110,20 +110,20 @@ class LighterTrader:
                 logger.error(f"无法获取{symbol}的price_decimals")
                 return None
             
-            formatted_price = self._format_price(price,price_decimals)  # 假设价格精度为2位小数
+            formatted_price = self._format_price(price*1.1,price_decimals)  # 假设价格精度为2位小数
             
             logger.info(f"创建市价订单: {symbol} {formatted_amount} {size_decimals} @ ${formatted_price} {price_decimals}")
             logger.info(f"Market Index: {market_index}, Is Ask: {is_ask}")
             
             # 创建订单
-            tx = await self.client.create_market_order(
+            tx_result = await self.client.create_market_order(
                 market_index=market_index,
                 client_order_index=client_order_index,
                 base_amount=formatted_amount,
                 avg_execution_price=formatted_price,
                 is_ask=is_ask,
             )
-            
+
             # logger.info(f"订单创建成功: {tx}")
             logger.info(f"订单创建成功")
             return tx
