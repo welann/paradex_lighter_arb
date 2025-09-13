@@ -5,19 +5,18 @@ Lighter交易功能模块
 """
 
 import asyncio
-import logging
 import lighter
 import os
 from dotenv import load_dotenv
 from typing import Optional
 from lighter_market import LighterMarketAPI
+from logger_config import get_logger
 
 # 加载.env文件
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-logging.getLogger('urllib3').setLevel(logging.ERROR)
+# 获取日志记录器
+logger = get_logger(__name__)
 
 class LighterTrader:
     """Lighter交易客户端"""

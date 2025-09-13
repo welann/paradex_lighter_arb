@@ -5,8 +5,7 @@
 """
 
 import asyncio
-import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from dataclasses import dataclass
 from option_positions_db import OptionPositionsDB
 from lighter_market import LighterMarketAPI
@@ -15,44 +14,11 @@ from lighter_trading import LighterTrader
 import os
 from datetime import datetime
 from dotenv import load_dotenv
+from logger_config import get_logger, get_current_log_file
 
-# 配置日志系统
-def setup_logging():
-    """配置日志系统，同时输出到控制台和文件"""
-    # 创建日志格式
-    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    date_format = '%Y-%m-%d %H:%M:%S'
-    
-    # 创建根日志记录器
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-    
-    # 清除已有的处理器
-    root_logger.handlers.clear()
-    
-    # 创建控制台处理器
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_formatter = logging.Formatter(log_format, date_format)
-    console_handler.setFormatter(console_formatter)
-    
-    # 创建文件处理器
-    log_filename = f"hedge_system_{datetime.now().strftime('%Y%m%d')}.log"
-    file_handler = logging.FileHandler(log_filename, encoding='utf-8')
-    file_handler.setLevel(logging.INFO)
-    file_formatter = logging.Formatter(log_format, date_format)
-    file_handler.setFormatter(file_formatter)
-    
-    # 添加处理器到根日志记录器
-    root_logger.addHandler(console_handler)
-    root_logger.addHandler(file_handler)
-    
-    return log_filename
-
-# 设置日志系统
-log_filename = setup_logging()
-logger = logging.getLogger(__name__)
-logging.getLogger('urllib3').setLevel(logging.ERROR)
+# 获取日志记录器
+logger = get_logger(__name__)
+log_filename = get_current_log_file()
 
 load_dotenv()
 
@@ -333,16 +299,14 @@ class HedgeSystem:
                     logger.info(f"开始第 {cycle_count} 次对冲检查...")
                     await self._execute_single_hedge_cycle(execute_trades)
                     
-                    if self.auto_hedge_enabled:
-                        logger.info(f"等待 {self.hedge_interval} 秒后进行下次检查...")
-                        await asyncio.sleep(self.hedge_interval)
+                    logger.info(f"等待 {self.hedge_interval} 秒后进行下次检查...")
+                    await asyncio.sleep(self.hedge_interval)
                         
                 except Exception as e:
                     logger.error(f"第 {cycle_count} 次对冲检查失败: {e}", exc_info=True)
                     print(f"❌ 对冲检查出错: {e}")
-                    if self.auto_hedge_enabled:
-                        logger.info("等待30秒后重试...")
-                        await asyncio.sleep(30)
+                    logger.info("等待30秒后重试...")
+                    await asyncio.sleep(30)
             
             logger.info(f"持续对冲模式已停止 - 共执行了 {cycle_count} 次检查")
             logger.info(f"{'='*50}")

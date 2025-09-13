@@ -7,6 +7,10 @@
 import asyncio
 from option_positions_db import OptionPositionsDB
 from hedge_system import HedgeSystem
+from logger_config import get_logger, get_current_log_file
+
+# 获取日志记录器
+logger = get_logger(__name__)
 
 class TradingCLI:
     """交易系统命令行界面"""
@@ -49,9 +53,12 @@ class TradingCLI:
         """显示欢迎信息"""
         print("\n🚀 欢迎使用期权交易和对冲系统!")
         print("输入 'help' 查看命令列表，'quit' 退出程序")
-        log_file = self.hedge_system.get_log_filename()
-        print(f"📝 日志文件: {log_file}")
-        print(f"💡 提示: 可以使用 'tail -f {log_file}' 实时查看详细日志\n")
+        log_file = get_current_log_file()
+        if log_file:
+            print(f"📝 日志文件: {log_file}")
+            print(f"💡 提示: 可以使用 'tail -f {log_file}' 实时查看详细日志\n")
+        else:
+            print("📝 日志输出: 仅控制台模式\n")
     
     async def handle_add_position(self, parts):
         """处理添加仓位命令"""
@@ -149,7 +156,7 @@ class TradingCLI:
                 self.hedge_task = asyncio.create_task(
                 self.hedge_system.run_hedge_cycle(execute_trades=True, continuous=True)
                 )
-                await self.hedge_task
+                # await self.hedge_task
                 
             except Exception as e:
                 print(f"❌ 启动自动对冲失败: {e}")
@@ -231,26 +238,30 @@ class TradingCLI:
     
     async def handle_log_info(self):
         """显示日志文件信息"""
-        log_file = self.hedge_system.get_log_filename()
-        print(f"\n📝 当前日志文件: {log_file}")
-        print(f"💡 实时查看日志: tail -f {log_file}")
-        print(f"📊 查看最近日志: tail -n 50 {log_file}")
-        
-        # 尝试显示日志文件大小
-        try:
-            import os
-            if os.path.exists(log_file):
-                size = os.path.getsize(log_file)
-                if size < 1024:
-                    print(f"📁 文件大小: {size} 字节")
-                elif size < 1024 * 1024:
-                    print(f"📁 文件大小: {size / 1024:.1f} KB")
+        log_file = get_current_log_file()
+        if log_file:
+            print(f"\n📝 当前日志文件: {log_file}")
+            print(f"💡 实时查看日志: tail -f {log_file}")
+            print(f"📊 查看最近日志: tail -n 50 {log_file}")
+            
+            # 尝试显示日志文件大小
+            try:
+                import os
+                if os.path.exists(log_file):
+                    size = os.path.getsize(log_file)
+                    if size < 1024:
+                        print(f"📁 文件大小: {size} 字节")
+                    elif size < 1024 * 1024:
+                        print(f"📁 文件大小: {size / 1024:.1f} KB")
+                    else:
+                        print(f"📁 文件大小: {size / (1024 * 1024):.1f} MB")
                 else:
-                    print(f"📁 文件大小: {size / (1024 * 1024):.1f} MB")
-            else:
-                print("⚠️ 日志文件尚未创建")
-        except Exception as e:
-            print(f"⚠️ 无法获取日志文件信息: {e}")
+                    print("⚠️ 日志文件尚未创建")
+            except Exception as e:
+                print(f"⚠️ 无法获取日志文件信息: {e}")
+        else:
+            print("\n📝 当前运行在控制台日志模式")
+            print("💡 日志仅显示在控制台，未写入文件")
     
     async def handle_interval(self, parts):
         """处理对冲间隔设置命令"""

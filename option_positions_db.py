@@ -1,6 +1,10 @@
 import sqlite3
 from typing import List, Dict, Optional
 from paradex_market import ParadexAPI
+from logger_config import get_logger
+
+# 获取日志记录器
+logger = get_logger(__name__)
 
 class OptionPositionsDB:
     def __init__(self, db_path: str = "option_positions.db"):
@@ -48,7 +52,7 @@ class OptionPositionsDB:
         try:
             return self.paradex_api.get_option_delta(symbol)
         except Exception as e:
-            print(f"获取delta失败: {symbol}, 错误: {e}")
+            logger.error(f"获取delta失败: {symbol}, 错误: {e}")
             return None
     
     def add_position(self, symbol: str, quantity: int) -> bool:
@@ -63,12 +67,12 @@ class OptionPositionsDB:
             bool: 添加成功返回True，失败返回False
         """
         if quantity == 0:
-            print("持仓张数不能为0")
+            logger.warning("持仓张数不能为0")
             return False
         
         delta = self._get_option_delta(symbol)
         if delta is None:
-            print(f"无法获取 {symbol} 的delta值，可能是无效的期权合约")
+            logger.error(f"无法获取 {symbol} 的delta值，可能是无效的期权合约")
             return False
         
         try:
@@ -89,26 +93,26 @@ class OptionPositionsDB:
                         cursor.execute('''
                             DELETE FROM option_positions WHERE id = ?
                         ''', (position_id,))
-                        print(f"已删除 {symbol} 仓位（完全平仓）")
+                        logger.info(f"已删除 {symbol} 仓位（完全平仓）")
                     else:
                         cursor.execute('''
                             UPDATE option_positions 
                             SET quantity = ?, delta = ?, updated_at = CURRENT_TIMESTAMP
                             WHERE id = ?
                         ''', (new_quantity, delta, position_id))
-                        print(f"已更新 {symbol} 仓位: {current_quantity} -> {new_quantity} 张")
+                        logger.info(f"已更新 {symbol} 仓位: {current_quantity} -> {new_quantity} 张")
                 else:
                     cursor.execute('''
                         INSERT INTO option_positions (symbol, quantity, delta)
                         VALUES (?, ?, ?)
                     ''', (symbol, quantity, delta))
-                    print(f"已添加 {symbol} 仓位: {quantity} 张，delta: {delta}")
+                    logger.info(f"已添加 {symbol} 仓位: {quantity} 张，delta: {delta}")
                 
                 conn.commit()
                 return True
                 
         except sqlite3.Error as e:
-            print(f"数据库错误: {e}")
+            logger.error(f"数据库错误: {e}")
             return False
     
     def remove_position(self, symbol: str, quantity: int) -> bool:
@@ -169,7 +173,7 @@ class OptionPositionsDB:
                 return True
                 
         except sqlite3.Error as e:
-            print(f"数据库错误: {e}")
+            logger.error(f"数据库错误: {e}")
             return False
     
     def get_position(self, symbol: str) -> Optional[Dict]:
