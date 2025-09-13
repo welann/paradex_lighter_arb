@@ -144,10 +144,20 @@ class HedgeSystem:
                 
                 # 获取当前在Lighter上的仓位（正数=long，负数=short）
                 current_position_data = get_position_by_symbol(self.account_index, underlying)
+                sign=float(current_position_data.get('sign',0))
+                
+                try:
+                    if sign==1 or sign==-1:
+                        pass
+                    else:
+                        raise ValueError("持仓方向未知")
+                except Exception as e:
+                    direction='NONE'
+                    logger.warning(f"无法获取{underlying}的持仓方向: {e}")
+                    
                 current_position = 0.0
                 if current_position_data:
-                    current_position = float(current_position_data.get('position', '0'))
-                
+                    current_position = float(current_position_data.get('position', '0'))*sign                    
                 # 计算需要调整的仓位差额
                 position_diff = target_hedge_position - current_position
                 

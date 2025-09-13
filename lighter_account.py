@@ -142,4 +142,6 @@ def display_position_by_symbol(account_index: int, symbol: str):
 
 if __name__ == "__main__":
     # display_positions()
-    display_position_by_symbol(54, 'sui')
+    # display_position_by_symbol(54, 'sui')
+    out=get_position_by_symbol(77860, 'sol')
+    print(out)
