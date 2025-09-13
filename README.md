@@ -9,7 +9,8 @@
 
 还有，paradex和lighter有宕机风险（我在测试代码的时候就遇到了一次paradex宕机），注意安全
 
-
+我的邀请码：
+https://app.paradex.trade/r/welan
 
 ## 使用方式
 
