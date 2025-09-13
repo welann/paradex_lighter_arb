@@ -20,6 +20,7 @@ class TradingCLI:
         self.hedge_system = HedgeSystem(threshold_pct=5.0)
         self.running = True
         self.hedge_task = None  # 用于跟踪后台对冲任务
+        self.hedge_thread = None  # 用于跟踪对冲线程
     
     def display_help(self):
         """显示帮助信息"""
@@ -149,20 +150,44 @@ class TradingCLI:
             
             print("✅ 启动自动对冲...")
             print(f"🤖 开始持续对冲监控，每{self.hedge_system.hedge_interval}秒检查一次")
-            self.hedge_system.start_auto_hedge()
             
-            # 启动持续对冲任务
-            try:
-                self.hedge_task = asyncio.create_task(
-                self.hedge_system.run_hedge_cycle(execute_trades=True, continuous=True)
-                )
-                # await self.hedge_task
-                
-            except Exception as e:
-                print(f"❌ 启动自动对冲失败: {e}")
-                self.hedge_system.stop_auto_hedge()
-                self.hedge_task = None
-                return
+            # 使用线程来运行对冲任务，避免阻塞主循环
+            import threading
+            
+            def run_hedge_in_thread():
+                """在新线程中运行对冲系统"""
+                try:
+                    # 创建新的事件循环
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    # 运行对冲系统
+                    loop.run_until_complete(
+                        self.hedge_system.run_hedge_cycle(execute_trades=True, continuous=True)
+                    )
+                except Exception as e:
+                    print(f"❌ 对冲线程出错: {e}")
+                    logger.error(f"对冲线程异常: {e}", exc_info=True)
+                finally:
+                    # 清理
+                    try:
+                        loop.close()
+                    except:
+                        pass
+            
+            # 启动对冲线程
+            self.hedge_thread = threading.Thread(target=run_hedge_in_thread, daemon=True)
+            self.hedge_thread.start()
+            
+            # 等待一下确保启动
+            import time
+            time.sleep(0.5)
+            
+            if self.hedge_thread.is_alive():
+                print("✅ 自动对冲线程已启动并在后台运行")
+            else:
+                print("❌ 自动对冲线程启动失败")
             
         elif action == "off":
             if not self.hedge_system.is_auto_hedge_enabled():
@@ -172,18 +197,16 @@ class TradingCLI:
             print("🛑 正在停止自动对冲...")
             self.hedge_system.stop_auto_hedge()
             
-            # 等待任务完成
-            if self.hedge_task:
-                try:
-                    await asyncio.wait_for(self.hedge_task, timeout=5.0)
-                except asyncio.TimeoutError:
-                    print("⚠️ 自动对冲任务停止超时，强制取消")
-                    self.hedge_task.cancel()
-                except Exception as e:
-                    print(f"⚠️ 停止自动对冲时出错: {e}")
-                finally:
-                    self.hedge_task = None
-                    
+            # 等待线程结束
+            if self.hedge_thread and self.hedge_thread.is_alive():
+                print("⏳ 等待对冲线程结束...")
+                self.hedge_thread.join(timeout=5.0)
+                if self.hedge_thread.is_alive():
+                    print("⚠️ 对冲线程未能正常结束")
+                else:
+                    print("✅ 对冲线程已正常结束")
+            
+            self.hedge_thread = None
             print("❌ 自动对冲已关闭")
             
         elif action == "status":
@@ -192,8 +215,14 @@ class TradingCLI:
             print(f"🔄 自动对冲状态: {status}")
             print(f"📊 对冲阈值: {self.hedge_system.threshold_pct}%")
             print(f"⏰ 检查间隔: {self.hedge_system.hedge_interval}秒")
-            if is_enabled and self.hedge_task:
-                print(f"🏃 后台任务状态: {'运行中' if not self.hedge_task.done() else '已完成'}")
+            
+            if is_enabled and self.hedge_thread:
+                thread_status = "运行中" if self.hedge_thread.is_alive() else "已停止"
+                print(f"🏃 后台线程状态: {thread_status}")
+            elif is_enabled:
+                print("⚠️ 对冲已启用但线程状态未知")
+            else:
+                print(f"⭕ 后台线程状态: 未启动")
         else:
             print("❌ 无效选项，请使用: on/off/status")
     
@@ -280,7 +309,7 @@ class TradingCLI:
             print(f"✅ 对冲检查间隔已设置为 {interval} 秒")
         except ValueError:
             print("❌ 间隔时间必须是整数")
-
+    
     async def process_command(self, command: str):
         """处理用户命令"""
         command = command.strip()
@@ -329,8 +358,11 @@ class TradingCLI:
         while self.running:
             try:
                 # 显示提示符
-                status_indicator = "🟢" if self.hedge_system.is_auto_hedge_enabled() else "🔴"
-                prompt = f"{status_indicator} Delta 对冲> "
+                is_hedge_running = (self.hedge_thread and 
+                                   self.hedge_thread.is_alive() and 
+                                   self.hedge_system.is_auto_hedge_enabled())
+                status_indicator = "🟢" if is_hedge_running else "🔴"
+                prompt = f"{status_indicator} 期权交易系统> "
                 
                 # 获取用户输入
                 command = input(prompt).strip()
@@ -355,16 +387,15 @@ class TradingCLI:
             print("🛑 正在停止自动对冲...")
             self.hedge_system.stop_auto_hedge()
             
-            if self.hedge_task:
-                try:
-                    await asyncio.wait_for(self.hedge_task, timeout=3.0)
-                except asyncio.TimeoutError:
-                    print("⚠️ 强制取消自动对冲任务")
-                    self.hedge_task.cancel()
-                except Exception:
-                    pass
-                finally:
-                    self.hedge_task = None
+            if self.hedge_thread and self.hedge_thread.is_alive():
+                print("⏳ 等待对冲线程结束...")
+                self.hedge_thread.join(timeout=3.0)
+                if self.hedge_thread.is_alive():
+                    print("⚠️ 对冲线程未能及时结束")
+                else:
+                    print("✅ 对冲线程已结束")
+            
+            self.hedge_thread = None
 
 async def main():
     """主函数"""
