@@ -12,10 +12,14 @@
 
 
 ## 使用方式
-### 方式一，ssh窗口不可以关闭
 
+### 必须步骤
 + 将 `.env.example` 文件名修改为 `.env`， 填写对应的api信息
 + 运行 `pip install uv`
++ 运行 `uv sync`
+
+### 方式一，ssh窗口不可以关闭
+
 + 运行 `uv run main.py`
 
 ### 方式二，ssh窗口可以关闭
