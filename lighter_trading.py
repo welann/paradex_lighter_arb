@@ -110,7 +110,10 @@ class LighterTrader:
                 logger.error(f"无法获取{symbol}的price_decimals")
                 return None
             
-            formatted_price = self._format_price(price*1.1,price_decimals)  # 假设价格精度为2位小数
+            # 根据买卖的不同方向，设定不同的滑点
+            price= price*0.9 if is_ask else price*1.1
+            
+            formatted_price = self._format_price(price,price_decimals)  # 假设价格精度为2位小数
             
             logger.info(f"创建市价订单: {symbol} {formatted_amount} {size_decimals} @ ${formatted_price} {price_decimals}")
             logger.info(f"Market Index: {market_index}, Is Ask: {is_ask}")
@@ -126,7 +129,7 @@ class LighterTrader:
 
             # logger.info(f"订单创建成功: {tx}")
             logger.info(f"订单创建成功")
-            return tx
+            return tx_result
             
         except Exception as e:
             logger.error(f"创建订单失败: {e}")

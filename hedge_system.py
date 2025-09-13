@@ -62,9 +62,10 @@ class HedgeRequirement:
     underlying_symbol: str
     current_delta: float
     current_price: float
-    required_hedge_amount: float
+    target_hedge_position: float
     current_position: float
     position_diff: float
+    trade_amount: float
     threshold_met: bool
     action_needed: str  # "BUY", "SELL", "NONE"
 
@@ -172,43 +173,41 @@ class HedgeSystem:
                     logger.error(f"{underlying}价格无效: {current_price}")
                     continue
                 
-                # 计算需要对冲的数量 (delta * 价格 = 美元敞口)
-                required_hedge_amount = abs(total_delta)
+                # 计算目标对冲仓位：delta为正需要short，delta为负需要long
+                target_hedge_position = -total_delta
                 
-                # 获取当前在Lighter上的仓位
+                # 获取当前在Lighter上的仓位（正数=long，负数=short）
                 current_position_data = get_position_by_symbol(self.account_index, underlying)
                 current_position = 0.0
                 if current_position_data:
-                    current_position = abs(float(current_position_data.get('position', '0')))
+                    current_position = float(current_position_data.get('position', '0'))
                 
-                # 计算差距
-                position_diff = abs(required_hedge_amount - current_position)
-                threshold_amount = required_hedge_amount * (self.threshold_pct / 100.0)
-                threshold_met = position_diff > threshold_amount
+                # 计算需要调整的仓位差额
+                position_diff = target_hedge_position - current_position
                 
-                # 确定操作方向
+                # 计算阈值（基于目标仓位的绝对值）
+                threshold_amount = abs(target_hedge_position) * (self.threshold_pct / 100.0)
+                threshold_met = abs(position_diff) > threshold_amount
+                
+                # 确定操作方向和数量
                 action_needed = "NONE"
+                trade_amount = 0.0
+                
                 if threshold_met:
-                    if required_hedge_amount > current_position:
-                        # 需要增加对冲仓位
-                        if total_delta > 0:
-                            action_needed = "SELL"  # delta为正，需要卖空对冲
-                        else:
-                            action_needed = "BUY"   # delta为负，需要买入对冲
+                    trade_amount = abs(position_diff)
+                    if position_diff > 0:
+                        action_needed = "BUY"   # 需要买入（增加long或减少short）
                     else:
-                        # 需要减少对冲仓位
-                        if total_delta > 0:
-                            action_needed = "BUY"   # 平空仓
-                        else:
-                            action_needed = "SELL"  # 平多仓
+                        action_needed = "SELL"  # 需要卖出（增加short或减少long）
                 
                 hedge_req = HedgeRequirement(
                     underlying_symbol=underlying,
                     current_delta=total_delta,
                     current_price=current_price,
-                    required_hedge_amount=required_hedge_amount,
+                    target_hedge_position=target_hedge_position,
                     current_position=current_position,
                     position_diff=position_diff,
+                    trade_amount=trade_amount,
                     threshold_met=threshold_met,
                     action_needed=action_needed
                 )
@@ -235,8 +234,8 @@ class HedgeSystem:
             return None
         
         try:
-            # 计算交易数量
-            trade_amount = hedge_req.position_diff
+            # 使用计算好的交易数量
+            trade_amount = hedge_req.trade_amount
             
             # 确定是买入还是卖出
             is_ask = hedge_req.action_needed == "SELL"
@@ -296,13 +295,13 @@ class HedgeSystem:
             print(f"\n标的资产: {req.underlying_symbol}")
             print(f"总Delta敞口: {req.current_delta:.4f}")
             print(f"当前价格: ${req.current_price:.2f}")
-            print(f"需要对冲数量: {req.required_hedge_amount:.4f}")
-            print(f"当前持仓数量: {req.current_position:.4f}")
-            print(f"数量差距: {req.position_diff:.4f}")
-            print(f"阈值: {self.threshold_pct}% (${req.required_hedge_amount * self.threshold_pct / 100:.2f})")
+            print(f"目标对冲仓位: {req.target_hedge_position:.4f}")
+            print(f"当前持仓: {req.current_position:.4f}")
+            print(f"仓位差距: {req.position_diff:.4f}")
+            print(f"阈值: {self.threshold_pct}% ({abs(req.target_hedge_position) * self.threshold_pct / 100:.4f})")
             print(f"是否需要调整: {'是' if req.threshold_met else '否'}")
             if req.threshold_met:
-                print(f"建议操作: {req.action_needed}")
+                print(f"建议操作: {req.action_needed} {req.trade_amount:.4f}")
             print("-" * 40)
         
         needs_hedge = [req for req in hedge_requirements if req.threshold_met]
@@ -373,9 +372,10 @@ class HedgeSystem:
             for req in hedge_requirements:
                 logger.info(f"标的 {req.underlying_symbol}: Delta={req.current_delta:.4f}, "
                            f"当前价格=${req.current_price:.2f}, "
-                           f"需要对冲={req.required_hedge_amount:.4f}, "
+                           f"目标仓位={req.target_hedge_position:.4f}, "
                            f"当前持仓={req.current_position:.4f}, "
                            f"差距={req.position_diff:.4f}, "
+                           f"交易量={req.trade_amount:.4f}, "
                            f"超过阈值={'是' if req.threshold_met else '否'}")
             
             # 显示分析结果
@@ -391,7 +391,7 @@ class HedgeSystem:
                     success_count = 0
                     for i, req in enumerate(needs_hedge, 1):
                         logger.info(f"处理 {i}/{len(needs_hedge)}: {req.underlying_symbol} "
-                                   f"({req.action_needed} {req.position_diff:.4f})")
+                                   f"({req.action_needed} {req.trade_amount:.4f})")
                         
                         tx_hash = await self.execute_hedge_order(req)
                         

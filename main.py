@@ -149,6 +149,7 @@ class TradingCLI:
                 self.hedge_task = asyncio.create_task(
                 self.hedge_system.run_hedge_cycle(execute_trades=True, continuous=True)
                 )
+                await self.hedge_task
                 
             except Exception as e:
                 print(f"❌ 启动自动对冲失败: {e}")
@@ -204,7 +205,7 @@ class TradingCLI:
             confirm = input("输入 'yes' 确认执行实际交易: ").strip().lower()
             if confirm == 'yes':
                 print("🔄 执行对冲交易...")
-                await self.hedge_system.run_hedge_cycle(execute_trades=True, continuous=True)
+                await self.hedge_system.run_hedge_cycle(execute_trades=True)
             else:
                 print("操作已取消")
         else:
@@ -318,7 +319,7 @@ class TradingCLI:
             try:
                 # 显示提示符
                 status_indicator = "🟢" if self.hedge_system.is_auto_hedge_enabled() else "🔴"
-                prompt = f"{status_indicator} 期权交易系统> "
+                prompt = f"{status_indicator} Delta 对冲> "
                 
                 # 获取用户输入
                 command = input(prompt).strip()
