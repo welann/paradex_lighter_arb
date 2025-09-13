@@ -12,10 +12,22 @@
 
 
 ## 使用方式
+### 方式一，ssh窗口不可以关闭
 
 + 将 `.env.example` 文件名修改为 `.env`， 填写对应的api信息
 + 运行 `pip install uv`
 + 运行 `uv run main.py`
+
+### 方式二，ssh窗口可以关闭
+
++ 下载`npm`: `sudo apt install npm`
++ 下载`pm2`: `npm install pm2 -g`
++ 使用`pm2启动程序`: `pm2 start "uv run python main.py" --name arb_bot`
++ `pm2 attach 0` 进入交互窗口，输入 `help`
++ 根据界面的提示使用功能
++ 想退出了就 `Ctrl+C`
+<img width="1102" height="147" alt="image" src="https://github.com/user-attachments/assets/2627ed1e-e6fc-43f0-9d50-132f6d5d3149" />
+
 
 > 注意，在开启autohedge on后，命令行界面会被日志信息占满，此时你输入命令仍然是可以识别的
 
