@@ -13,17 +13,26 @@
 https://app.paradex.trade/r/welan
 
 ## 使用方式
+### 一键运行脚本
+按顺序运行如下命令
 
-### 必须步骤
++ `sudo apt update &&sudo apt install git`
++ `git clone https://github.com/welann/paradex_lighter_arb.git &&cd paradex_lighter_arb`
++ 新建一个`.env文件，把api key一系列的东西写入`
++ `sh setup_and_run.sh`
++ 完成
+
+### 手动运行
+#### 必须步骤
 + 将 `.env.example` 文件名修改为 `.env`， 填写对应的api信息
 + 运行 `pip install uv`
 + 运行 `uv sync`
 
-### 方式一，ssh窗口不可以关闭
+#### 方式二，ssh窗口不可以关闭
 
 + 运行 `uv run main.py`
 
-### 方式二，ssh窗口可以关闭
+#### 方式三，ssh窗口可以关闭
 
 + 下载`npm`: `sudo apt install npm`
 + 下载`pm2`: `npm install pm2 -g`
