@@ -1,5 +1,6 @@
 import requests
 import json
+import csv
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 from decimal import Decimal
@@ -168,10 +169,10 @@ class ParadexAPI:
     def get_option_delta(self, symbol: str) -> Optional[float]:
         """
         获取指定期权合约的delta值
-        
+
         Args:
             symbol: 期权合约代码，如 "SOL-USD-215-C"
-            
+
         Returns:
             Optional[float]: 期权的delta值，如果合约不存在或不是期权则返回None
         """
@@ -180,25 +181,147 @@ class ParadexAPI:
             return market.delta
         return None
 
+    def calculate_funding_cost_per_unit_capital(self, option_symbol: str) -> Optional[Dict]:
+        """
+        计算每单位资金对应的资金费率
+
+        对于期权合约，计算每8小时需要支付的资金费与期权成本的比率
+        例如：ETH-USD-4500-C期权，每份每8小时资金费 = 4500 * 0.16%，期权成本 = 120
+
+        Args:
+            option_symbol: 期权合约代码，如 "ETH-USD-4500-C"
+
+        Returns:
+            Optional[Dict]: 包含计算结果的字典
+            {
+                'symbol': 合约代码,
+                'strike_price': 行权价,
+                'option_cost': 期权成本,
+                'funding_fee_8h': 每8小时资金费,
+                'funding_cost_ratio': 资金费与期权成本的比率,
+                'annualized_funding_cost': 年化资金成本率
+            }
+        """
+        market = self.get_market_by_symbol(option_symbol)
+        if not market or not market.is_option:
+            print(f"合约 {option_symbol} 不存在或不是期权合约")
+            return None
+
+        # 从期权代码中提取行权价
+        try:
+            # 期权格式例如: ETH-USD-4500-C
+            parts = option_symbol.split('-')
+            if len(parts) < 4:
+                print(f"无效的期权合约格式: {option_symbol}")
+                return None
+
+            strike_price = float(parts[2])
+        except (ValueError, IndexError):
+            print(f"无法从合约代码中提取行权价: {option_symbol}")
+            return None
+
+        # 获取期权的mark价格作为期权成本
+        option_cost = market.mark_price
+        if option_cost is None:
+            print(f"无法获取期权 {option_symbol} 的mark价格")
+            return None
+
+        # 获取资金费率 (假设为年化利率，需要转换为8小时费率)
+        # 如果没有funding_rate，使用默认的0.16%
+        funding_rate_annual = market.funding_rate if market.funding_rate is not None else 0
+        funding_rate_annual=funding_rate_annual*8 
+        # 计算每8小时的资金费
+        funding_fee_8h = strike_price * funding_rate_annual
+
+        # 计算资金费与期权成本的比率
+        funding_cost_ratio = funding_fee_8h / option_cost
+
+
+        result = {
+            'symbol': option_symbol,
+            'strike_price': strike_price,
+            'option_cost': option_cost,
+            'funding_fee_8h': funding_fee_8h,
+            'funding_cost_ratio': funding_cost_ratio,
+            'funding_rate_used': funding_rate_annual
+        }
+
+        return result
+
 
 def main():
- 
     api = ParadexAPI()
-    
-    markets = api.get_markets_summary()
-    print(f"total {len(markets)} markets open")
-    
- 
-    for market in markets[:5]:
-        print(f"Symbol: {market.symbol}")
-        print(f"Mark Price: {market.mark_price}")
-        print(f"24h Volume: {market.volume_24h}")
-        print(f"24h Change: {market.price_change_rate_24h}%")
-        print("-" * 40)
- 
-    print("sol-115-C")
-    sol_115_c=api.get_market_by_symbol("SOL-USD-215-C")
-    print(sol_115_c)
+
+    # 获取所有期权合约
+    option_markets = api.get_option_markets()
+    print(f"找到 {len(option_markets)} 个期权合约")
+    print("=" * 80)
+
+    # 用于存储所有计算结果的列表
+    results_data = []
+
+    # 测试每个期权的资金费计算
+    for option in option_markets:
+        if option.mark_price is not None and option.mark_price > 0:
+            result = api.calculate_funding_cost_per_unit_capital(option.symbol)
+
+            if result:
+                # 添加到结果列表
+                results_data.append(result)
+
+                # 控制台输出
+                # print(f"期权: {result['symbol']}")
+                # print(f"  行权价: ${result['strike_price']:.2f}")
+                # print(f"  期权成本: ${result['option_cost']:.4f}")
+                # print(f"  每8小时资金费: ${result['funding_fee_8h']:.6f}")
+                # print(f"  资金费率: {result['funding_cost_ratio']:.6f} ({result['funding_cost_ratio']*100:.4f}%)")
+                # print(f"  使用的资金费率: {result['funding_rate_used']:.6f}")
+                # print("-" * 60)
+            else:
+                print(f"无法计算期权 {option.symbol} 的资金费")
+        else:
+            print(f"期权 {option.symbol} 没有有效的mark价格")
+
+    # 将结果保存到CSV文件
+    if results_data:
+        csv_filename = 'option_funding_analysis.csv'
+
+        # CSV文件的列标题
+        fieldnames = [
+            'symbol',
+            'strike_price',
+            'option_cost',
+            'funding_fee_8h',
+            'funding_cost_ratio',
+            'funding_cost_percentage',
+            'funding_rate_used'
+        ]
+
+        with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            # 写入标题行
+            writer.writeheader()
+
+            # 写入数据
+            for result in results_data:
+                writer.writerow({
+                    'symbol': result['symbol'],
+                    'strike_price': result['strike_price'],
+                    'option_cost': result['option_cost'],
+                    'funding_fee_8h': result['funding_fee_8h'],
+                    'funding_cost_ratio': result['funding_cost_ratio'],
+                    'funding_cost_percentage': result['funding_cost_ratio'] * 100,
+                    'funding_rate_used': result['funding_rate_used']
+                })
+
+        print(f"\n数据已保存到 {csv_filename} 文件")
+        print(f"共保存 {len(results_data)} 条期权数据")
+    else:
+        print("没有有效数据可以保存")
+
+    print("\n" + "=" * 80)
+    print("资金费计算完成")
 
 
 if __name__ == "__main__":

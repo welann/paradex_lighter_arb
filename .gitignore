@@ -12,3 +12,4 @@ wheels/
 *.db
 *.log
 
+*.csv

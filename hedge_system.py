@@ -330,17 +330,14 @@ class HedgeSystem:
         cycle_start_time = datetime.now()
         logger.info(f"{'='*50}")
         logger.info(f"开始对冲周期分析 - {cycle_start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        logger.info(f"执行模式: {'实际交易' if execute_trades else '仅分析'}")
-        logger.info(f"对冲阈值: {self.threshold_pct}%")
+        logger.info(f"执行模式: {'实际交易' if execute_trades else '仅分析'}，对冲阈值: {self.threshold_pct}%")
         
         try:
             # 更新所有期权的delta值
             updated_count = self.db.update_all_deltas()
-            logger.info(f"步骤1: 成功更新 {updated_count} 个期权的delta值")
-            
             # 计算对冲需求
             hedge_requirements = self.get_hedge_requirements()
-            logger.info(f"步骤2: 计算对冲需求，发现 {len(hedge_requirements)} 个标的资产")
+            logger.info(f"步骤1: 成功更新 {updated_count} 个期权的delta值，发现 {len(hedge_requirements)} 个标的资产")
             
             # 记录详细的对冲需求信息
             for req in hedge_requirements:

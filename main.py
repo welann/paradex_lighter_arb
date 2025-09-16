@@ -301,8 +301,8 @@ class TradingCLI:
         
         try:
             interval = int(parts[1])
-            if interval < 10:
-                print("❌ 间隔时间不能少于10秒")
+            if interval < 1:
+                print("❌ 间隔时间不能少于1秒")
                 return
             
             self.hedge_system.set_hedge_interval(interval)
