@@ -70,7 +70,7 @@ class TradingCLI:
         
         symbol = parts[1]
         try:
-            quantity = int(parts[2])
+            quantity = float(parts[2])
             success = self.db.add_position(symbol, quantity)
             if success:
                 print(f"✅ 成功添加仓位: {symbol} {quantity}张")
